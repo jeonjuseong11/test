@@ -15,6 +15,7 @@ import SelectionDisplay from "./SelectionDisplay";
 import CustomNode from "./CustomNode";
 import ControlPanel from "./ControlPanel";
 import BackgroundPanel from "./BackgroundSettingPanel";
+import EdgeTypeSelect from "./EdgeTypeSelector"; // 새로운 EdgeTypeSelect 컴포넌트 추가
 
 const initialNodes = [];
 
@@ -26,7 +27,7 @@ const nodeTypes = {
 export default function Flow() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  //노드의 전체 개수
+  // 노드의 전체 개수
   const [nodeIdCounter, setNodeIdCounter] = useState(initialNodes.length);
 
   const connectingNodeId = useRef(null);
@@ -37,77 +38,81 @@ export default function Flow() {
 
   const { screenToFlowPosition } = useReactFlow();
 
-  //선택한 노드 상태값
-  const [selectedNode, setSelectedNode] = useState(null);
-  //이전에 선택된 노드
-  const [lastSelectedNodeEdges, setLastSelectedNodeEdges] = useState([]);
+  // 선택한 엘리먼트 상태값
+  const [selectedElements, setSelectedElements] = useState([]);
+  // 이전에 선택된 엘리먼트
+  const [lastSelectedElements, setLastSelectedElements] = useState([]);
+  const [selectedEdgeType, setSelectedEdgeType] = useState("default");
 
   const onSelectionChange = useCallback(
     (elements) => {
-      console.log(selectedNode);
-      // 이전에 animated 속성이 true로 설정된 엣지들을 원래대로 되돌림
-      const currentSelectedNodeId = selectedNode ? selectedNode.id : null;
-      const newSelectedNodeId = elements.nodes.length > 0 ? elements.nodes[0].id : null;
+      if (!elements || (!elements.nodes && !elements.edges)) {
+        setSelectedElements([]);
+        setLastSelectedElements([]);
+        return;
+      }
 
-      if (currentSelectedNodeId !== newSelectedNodeId) {
-        console.log(elements); // 새로운 선택이 있을 때만 로그 출력
+      const currentSelectedElementId = selectedElements.length > 0 ? selectedElements[0].id : null;
+      const newSelectedElementId =
+        elements.nodes?.length > 0
+          ? elements.nodes[0].id
+          : elements.edges?.length > 0
+          ? elements.edges[0].id
+          : null;
 
-        // 이전에 animated 속성이 true로 설정된 엣지들을 원래대로 되돌림
-        const resetEdges = lastSelectedNodeEdges.map((edge) => ({
-          ...edge,
+      if (currentSelectedElementId !== newSelectedElementId) {
+        console.log(elements);
+
+        const resetEdges = lastSelectedElements.map((element) => ({
+          ...element,
           animated: false,
-          style: { ...edge.style, stroke: "#b1b1b7" },
+          style: { ...element.style, stroke: "#b1b1b7" },
         }));
-        setEdges((eds) => eds.map((edge) => resetEdges.find((re) => re.id === edge.id) || edge));
+        setEdges((eds) =>
+          eds.map((element) => resetEdges.find((re) => re.id === element.id) || element)
+        );
 
-        if (elements.nodes.length === 0) {
-          setSelectedNode(null);
-          setLastSelectedNodeEdges([]);
-        } else {
-          const selected = elements.nodes[0];
-          setSelectedNode(selected);
+        const selectedId =
+          elements.nodes?.length > 0
+            ? elements.nodes[0].id
+            : elements.edges?.length > 0
+            ? elements.edges[0].id
+            : null;
 
-          // 선택된 노드에 연결된 엣지들 찾기
-          const connectedEdges = edges.filter(
-            (edge) => edge.source === selected.id || edge.target === selected.id
-          );
+        const connectedEdges = edges.filter(
+          (edge) => edge.source === selectedId || edge.target === selectedId
+        );
 
-          // 연결된 엣지들의 animated 속성을 true로 설정
-          const updatedEdges = connectedEdges.map((edge) => ({
-            ...edge,
-            animated: true,
-            style: { ...edge.style, stroke: "red" }, // 선택된 엣지의 색상 변경
-          }));
+        const updatedEdges = connectedEdges.map((edge) => ({
+          ...edge,
+          animated: true,
+          style: { ...edge.style, stroke: "red" },
+        }));
 
-          setEdges((eds) =>
-            eds.map((edge) => updatedEdges.find((ue) => ue.id === edge.id) || edge)
-          );
-          setLastSelectedNodeEdges(updatedEdges);
-        }
+        setEdges((eds) => eds.map((edge) => updatedEdges.find((ue) => ue.id === edge.id) || edge));
+        setLastSelectedElements(updatedEdges);
+        setSelectedElements(elements.nodes?.length > 0 ? elements.nodes : elements.edges);
       }
     },
-    [setSelectedNode, edges, setEdges, lastSelectedNodeEdges, selectedNode]
+    [edges, setEdges, setLastSelectedElements, selectedElements, lastSelectedElements]
   );
-
-  //노드 정보 수정
+  // 노드 정보 수정
   const updateNodeData = useCallback(
     (nodeId, newData) => {
       setNodes((nds) =>
         nds.map((node) => {
           if (node.id === nodeId) {
             const updatedNode = { ...node, data: { ...node.data, ...newData } };
-            if (selectedNode && selectedNode.id === nodeId) {
-              setSelectedNode(updatedNode);
-            }
             return updatedNode;
           }
           return node;
         })
       );
     },
-    [setNodes, selectedNode, setSelectedNode]
+    [setNodes]
   );
-  //노드 추가 함수
+
+  // 노드 추가 함수
   const addNode = useCallback(() => {
     setNodeIdCounter(nodeIdCounter + 1);
 
@@ -136,14 +141,15 @@ export default function Flow() {
     setNodes((nds) => nds.concat(newNode));
   }, [nodeIdCounter, setNodes, nodes]);
 
-  //노드 삭제 함수
+  // 노드 삭제 함수
   const deleteNode = useCallback(
     (nodeId) => {
       setNodes((nds) => nds.filter((node) => node.id !== nodeId));
     },
     [setNodes]
   );
-  //노드 복제 함수
+
+  // 노드 복제 함수
   const copyNode = useCallback(
     (nodeId) => {
       setNodeIdCounter((prev) => prev + 1);
@@ -164,11 +170,33 @@ export default function Flow() {
     [setNodes, nodeIdCounter]
   );
 
-  //엣지(노드 연결선) 추가 함수
-  const onConnect = useCallback((params) => {
-    connectingNodeId.current = null;
-    setEdges((eds) => addEdge(params, eds));
-  }, []);
+  // 엣지(노드 연결선) 추가 함수
+  const onConnect = useCallback(
+    (params) => {
+      connectingNodeId.current = null;
+
+      // 선택된 선의 타입을 사용하여 엣지 추가
+      const edgeStyle =
+        selectedEdgeType === "smoothstep"
+          ? { type: "smoothstep" }
+          : selectedEdgeType === "step"
+          ? { type: "step" }
+          : selectedEdgeType === "straight"
+          ? { type: "straight" }
+          : {}; // 기본값은 빈 객체
+
+      const newEdge = {
+        ...params,
+        style: {
+          ...params.style,
+          ...edgeStyle, // 선택된 선의 스타일을 엣지의 스타일로 설정
+        },
+      };
+
+      setEdges((eds) => addEdge(newEdge, eds));
+    },
+    [selectedEdgeType, setEdges]
+  );
   const onConnectStart = useCallback((_, { nodeId }) => {
     connectingNodeId.current = nodeId;
   }, []);
@@ -208,7 +236,94 @@ export default function Flow() {
     [nodeIdCounter, setNodes, setEdges, screenToFlowPosition]
   );
 
-  //node 내부의 삭제, 복제 함수를 전달하기 위한 함수
+  // 노드 및 엣지 삭제 함수
+  const deleteElement = () => {
+    const elementsToDelete = selectedElements.map((element) => element.id);
+    setNodes((nds) => nds.filter((node) => !elementsToDelete.includes(node.id)));
+    setEdges((eds) => eds.filter((edge) => !elementsToDelete.includes(edge.id)));
+  };
+
+  // 노드 및 엣지 복제 함수
+  const copyElement = () => {
+    const elementsToCopy = selectedElements.map((element) => {
+      if (element.type === "node") {
+        const nodeToCopy = nodes.find((n) => n.id === element.id);
+        if (nodeToCopy) {
+          return {
+            ...nodeToCopy,
+            id: `${nodeIdCounter}`,
+            data: { ...nodeToCopy.data, label: `Copy of ${nodeToCopy.data.label}` },
+            position: { x: nodeToCopy.position.x + 30, y: nodeToCopy.position.y + 30 }, // 새 위치를 지정
+          };
+        }
+      } else if (element.type === "edge") {
+        const edgeToCopy = edges.find((e) => e.id === element.id);
+        if (edgeToCopy) {
+          return {
+            ...edgeToCopy,
+            id: `e${nodeIdCounter}-${edgeToCopy.source}`,
+            source: nodeIdCounter.toString(),
+            target:
+              edgeToCopy.target === connectingNodeId.current
+                ? nodeIdCounter.toString()
+                : edgeToCopy.target,
+          };
+        }
+      }
+      return null;
+    });
+
+    const newNodes = elementsToCopy.filter((element) => element && element.type === "node");
+    const newEdges = elementsToCopy.filter((element) => element && element.type === "edge");
+
+    setNodes((nds) => nds.concat(newNodes));
+    setEdges((eds) => eds.concat(newEdges));
+    setNodeIdCounter(nodeIdCounter + 1);
+  };
+
+  const handleEdgeTypeChange = (event) => {
+    const newEdgeType = event.target.value;
+    setSelectedEdgeType(newEdgeType); // 엣지 타입 상태 업데이트
+
+    // 엣지 타입 변경
+    setEdges((edges) =>
+      edges.map((edge) => {
+        if (selectedElements.find((element) => element.id === edge.id)) {
+          return {
+            ...edge,
+            type: newEdgeType,
+          };
+        }
+        return edge;
+      })
+    );
+  };
+
+  const SelectionPanel = () => {
+    console.log(selectedElements);
+    const hasEdges = selectedElements.some((element) => element.style.stroke);
+
+    return (
+      <Panel position="top-right">
+        {selectedElements.map((element) => (
+          <div key={element.id}>
+            <h4>ID: {element.id}</h4>
+            <p>Type: {element.type}</p>
+            <button onClick={() => deleteElement(element.id)}>Delete</button>
+            <button onClick={() => copyElement(element.id)}>Copy</button>
+            <hr />
+            {hasEdges && (
+              <>
+                <label>Select Edge Type:</label>
+                <EdgeTypeSelect value={selectedEdgeType} onChange={handleEdgeTypeChange} />
+              </>
+            )}
+          </div>
+        ))}
+      </Panel>
+    );
+  };
+
   const nodesWithProps = nodes.map((node) => ({
     ...node,
     data: {
@@ -238,14 +353,11 @@ export default function Flow() {
         nodeOrigin={[0.5, 0]}
       >
         <MiniMap />
+        <Controls />
         <Background color="#ccc" variant={variant} gap={gap} />
         <BackgroundPanel addNode={addNode} gap={gap} setGap={setGap} setVariant={setVariant} />
         <ControlPanel />
-        {selectedNode !== null && (
-          <Panel position="top-right">
-            <SelectionDisplay node={selectedNode} updateNodeData={updateNodeData} />
-          </Panel>
-        )}
+        {selectedElements.length > 0 && <SelectionPanel />}
       </ReactFlow>
     </div>
   );
